@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase';
 import { Article, WithdrawalRequest, DEFAULT_SETTINGS } from '../../types';
 import { api } from '../../services/api';
-import { Plus, Trash, Check, X } from 'lucide-react';
+import { Plus, Trash, Check, X, Upload, Loader } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'articles' | 'withdrawals'>('articles');
@@ -11,6 +12,7 @@ const AdminDashboard: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [newArticle, setNewArticle] = useState({ title: '', thumbnail: '', description: '', content: '' });
   const [isCreating, setIsCreating] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // Withdrawals State
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
@@ -60,6 +62,36 @@ const AdminDashboard: React.FC = () => {
     fetchWithdrawals();
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      
+      const response = await fetch('https://api.imgbb.com/1/upload?key=4f35947e19712065d858766e83fea8cd', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setNewArticle(prev => ({ ...prev, thumbnail: data.data.url }));
+      } else {
+        alert('Image upload failed: ' + (data.error?.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Error uploading image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div>
        <div className="mb-8 border-b border-gray-200">
@@ -92,33 +124,87 @@ const AdminDashboard: React.FC = () => {
              <div className="bg-white shadow sm:rounded-lg p-6">
                <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">Create New Article</h3>
                <form onSubmit={handleCreateArticle} className="space-y-4">
-                  <input 
-                    placeholder="Title" 
-                    className="w-full border p-2 rounded"
-                    value={newArticle.title}
-                    onChange={e => setNewArticle({...newArticle, title: e.target.value})}
-                  />
-                  <input 
-                    placeholder="Thumbnail URL (https://picsum.photos/...)" 
-                    className="w-full border p-2 rounded"
-                    value={newArticle.thumbnail}
-                    onChange={e => setNewArticle({...newArticle, thumbnail: e.target.value})}
-                  />
-                  <textarea 
-                    placeholder="Short Description" 
-                    className="w-full border p-2 rounded"
-                    value={newArticle.description}
-                    onChange={e => setNewArticle({...newArticle, description: e.target.value})}
-                  />
-                  <textarea 
-                    placeholder="Full Content" 
-                    className="w-full border p-2 rounded h-32"
-                    value={newArticle.content}
-                    onChange={e => setNewArticle({...newArticle, content: e.target.value})}
-                  />
-                  <div className="flex space-x-2">
-                    <button type="submit" className="px-4 py-2 bg-brand-600 text-white rounded">Publish</button>
-                    <button type="button" onClick={() => setIsCreating(false)} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Title</label>
+                    <input 
+                      placeholder="Article Title" 
+                      className="mt-1 w-full border border-gray-300 p-2 rounded shadow-sm focus:ring-brand-500 focus:border-brand-500"
+                      value={newArticle.title}
+                      onChange={e => setNewArticle({...newArticle, title: e.target.value})}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Thumbnail Image</label>
+                    <div className="mt-1 flex items-center space-x-4">
+                      <div className="flex-grow">
+                        <input 
+                          placeholder="Image URL will appear here" 
+                          className="w-full border border-gray-300 p-2 rounded bg-gray-50 text-gray-500"
+                          value={newArticle.thumbnail}
+                          readOnly
+                        />
+                      </div>
+                      <label className={`cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        {uploading ? (
+                          <>
+                             <Loader className="animate-spin -ml-1 mr-2 h-5 w-5 text-brand-600" />
+                             <span>Uploading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="-ml-1 mr-2 h-5 w-5 text-gray-400" />
+                            <span>Upload</span>
+                          </>
+                        )}
+                        <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={uploading} />
+                      </label>
+                    </div>
+                    {newArticle.thumbnail && (
+                      <div className="mt-2">
+                        <img src={newArticle.thumbnail} alt="Preview" className="h-32 w-auto object-cover rounded border border-gray-200" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Short Description</label>
+                    <textarea 
+                      placeholder="Brief summary for the homepage card" 
+                      className="mt-1 w-full border border-gray-300 p-2 rounded shadow-sm focus:ring-brand-500 focus:border-brand-500"
+                      value={newArticle.description}
+                      onChange={e => setNewArticle({...newArticle, description: e.target.value})}
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                     <label className="block text-sm font-medium text-gray-700">Full Content</label>
+                    <textarea 
+                      placeholder="Full article content..." 
+                      className="mt-1 w-full border border-gray-300 p-2 rounded shadow-sm h-64 focus:ring-brand-500 focus:border-brand-500"
+                      value={newArticle.content}
+                      onChange={e => setNewArticle({...newArticle, content: e.target.value})}
+                      required
+                    />
+                  </div>
+
+                  <div className="flex space-x-3 pt-4 border-t border-gray-100">
+                    <button 
+                      type="submit" 
+                      disabled={uploading}
+                      className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-brand-600 hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500"
+                    >
+                      Publish Article
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsCreating(false)} 
+                      className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+                    >
+                      Cancel
+                    </button>
                   </div>
                </form>
              </div>

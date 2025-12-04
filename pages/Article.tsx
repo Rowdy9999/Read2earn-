@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { db, auth } from '../firebase';
 import { Article as ArticleType } from '../types';
 import { api } from '../services/api';
-import { Share2, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Share2, Clock, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 
 const Article: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -14,7 +14,11 @@ const Article: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [viewRecorded, setViewRecorded] = useState(false);
   const [timeLeft, setTimeLeft] = useState(15);
+  
+  // Feedback States
+  const [processing, setProcessing] = useState(false);
   const [earnMessage, setEarnMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   
   // To avoid duplicate calls if component re-renders
   const callMadeRef = useRef(false);
@@ -49,26 +53,28 @@ const Article: React.FC = () => {
           
           if (!callMadeRef.current && id) {
              callMadeRef.current = true;
+             setProcessing(true); // Show user we are working
              
-             // LOGIC FIX: 
-             // 1. If ref param exists, credit that user (Share & Earn)
-             // 2. If NO ref param, credit the CURRENT logged in user (Read & Earn)
+             // Get current user ID to credit them if no ref link is used
              const currentUser = auth.currentUser;
              const beneficiaryId = refUserId || (currentUser ? currentUser.uid : null);
 
-             console.log("Timer ended. Recording view for:", beneficiaryId || "Anonymous");
-             
              api.recordView(id, beneficiaryId).then((res) => {
+                setProcessing(false);
                 if (res && res.success) {
                    setViewRecorded(true);
                    if (res.earned > 0) {
-                     setEarnMessage(`You earned $${res.earned}!`);
+                     setEarnMessage(`Success! You earned $${res.earned}`);
                    } else if (res.message) {
-                     // Could be "View already recorded"
-                     setEarnMessage(res.message);
+                     setEarnMessage(res.message); // e.g. "View already recorded"
+                   } else {
+                     setEarnMessage('View recorded!');
                    }
                 } else {
-                   console.error("View record failed:", res);
+                   // Show the specific error from backend
+                   setErrorMessage(res?.error || 'Failed to record view. Please check connection.');
+                   // Reset callMadeRef so they can try again if they refresh? 
+                   // No, keep it true to prevent loops.
                 }
              });
           }
@@ -105,12 +111,20 @@ const Article: React.FC = () => {
           alt={article.title} 
           className="w-full h-full object-cover"
         />
-        <div className="absolute top-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-full flex items-center text-sm font-medium backdrop-blur-sm">
-           <Clock className="w-4 h-4 mr-2" />
+        <div className="absolute top-4 right-4 px-4 py-2 rounded-full flex items-center text-sm font-medium backdrop-blur-sm shadow-sm transition-all duration-300 bg-white/90 text-gray-800">
            {viewRecorded ? (
-             <span className="flex items-center text-green-400"><CheckCircle className="w-4 h-4 mr-1"/> Validated</span>
+             <span className="flex items-center text-green-600 font-bold">
+               <CheckCircle className="w-4 h-4 mr-1"/> Validated
+             </span>
+           ) : processing ? (
+             <span className="flex items-center text-blue-600 font-bold">
+               <Loader className="w-4 h-4 mr-1 animate-spin"/> Verifying...
+             </span>
            ) : (
-             <span>Reading: {timeLeft}s left</span>
+             <span className="flex items-center">
+               <Clock className="w-4 h-4 mr-2" />
+               Reading: {timeLeft}s left
+             </span>
            )}
         </div>
       </div>
@@ -131,10 +145,19 @@ const Article: React.FC = () => {
            </button>
         </div>
 
+        {/* Success Message */}
         {earnMessage && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center text-green-800">
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center text-green-800 animate-fade-in">
             <CheckCircle className="h-5 w-5 mr-2 text-green-500" />
             <span className="font-medium">{earnMessage}</span>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {errorMessage && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center text-red-800 animate-fade-in">
+            <AlertCircle className="h-5 w-5 mr-2 text-red-500" />
+            <span className="font-medium">Error: {errorMessage}</span>
           </div>
         )}
 
@@ -145,7 +168,7 @@ const Article: React.FC = () => {
         </div>
         
         {/* Sticky bottom banner for encouragement */}
-        {!viewRecorded && (
+        {!viewRecorded && !processing && (
            <div className="fixed bottom-0 left-0 right-0 bg-brand-600 text-white p-4 text-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-40 transform transition-transform">
               <p className="font-medium flex items-center justify-center">
                 <Clock className="w-5 h-5 mr-2 animate-pulse" />

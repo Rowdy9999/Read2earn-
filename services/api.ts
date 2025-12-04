@@ -6,19 +6,24 @@ const BASE_URL = '/.netlify/functions';
 
 export const api = {
   async recordView(articleId: string, refUserId: string | null) {
-    // Removed the "if (!refUserId) return" check to allow recording anonymous views
-    // and to ensure logic works if checking against logged-in user ID
-    
     try {
       const response = await fetch(`${BASE_URL}/recordView`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId, refUserId }),
       });
-      return await response.json();
-    } catch (error) {
+      
+      const text = await response.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        // If parsing fails, it's likely a 500 HTML error page from Netlify
+        console.error("Non-JSON API response:", text);
+        return { success: false, error: `Server Error (${response.status}): ${text.slice(0, 100)}` };
+      }
+    } catch (error: any) {
       console.error("API Error (recordView):", error);
-      return { success: false, error: 'Network error' };
+      return { success: false, error: error.message || 'Network connection failed' };
     }
   },
 
@@ -60,6 +65,20 @@ export const api = {
       return await response.json();
     } catch (error) {
       console.error("API Error (promoteToAdmin):", error);
+      return { error: 'Network error' };
+    }
+  },
+
+  async revokeAdmin(uid: string) {
+    try {
+      const response = await fetch(`${BASE_URL}/revokeAdmin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error("API Error (revokeAdmin):", error);
       return { error: 'Network error' };
     }
   }

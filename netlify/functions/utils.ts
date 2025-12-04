@@ -3,18 +3,33 @@ import * as admin from 'firebase-admin';
 // NOTE: In a real Netlify environment, you must add your service account JSON 
 // to the Environment Variables as FIREBASE_SERVICE_ACCOUNT
 
+let dbInstance: admin.firestore.Firestore | null = null;
+
 if (!admin.apps.length) {
   try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+    const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (serviceAccountVar) {
+      const serviceAccount = JSON.parse(serviceAccountVar);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      dbInstance = admin.firestore();
+    } else {
+      console.error("Missing FIREBASE_SERVICE_ACCOUNT environment variable.");
+    }
   } catch (e) {
     console.error("Firebase Admin Init Error:", e);
   }
+} else {
+  // Already initialized
+  try {
+    dbInstance = admin.firestore();
+  } catch(e) {
+    console.error("Existing App Firestore Error:", e);
+  }
 }
 
-export const db = admin.firestore();
+export const db = dbInstance;
 
 export const headers = {
   'Access-Control-Allow-Origin': '*',

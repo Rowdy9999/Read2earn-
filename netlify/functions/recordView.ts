@@ -6,10 +6,20 @@ export const handler = async (event: any) => {
     return { statusCode: 200, headers, body: 'ok' };
   }
 
+  // Critical Check: Is DB connected?
+  if (!db) {
+    console.error("Database connection missing. Check FIREBASE_SERVICE_ACCOUNT env var.");
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: "Server Configuration Error: Database not connected." })
+    };
+  }
+
   try {
     const { articleId, refUserId } = JSON.parse(event.body || '{}');
     
-    // Only ArticleID is strictly required. refUserId is optional (if missing, we just record a view)
+    // Only ArticleID is strictly required.
     if (!articleId) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing articleId' }) };
     }
@@ -25,25 +35,23 @@ export const handler = async (event: any) => {
       .get();
 
     if (!recentViewSnap.empty) {
-      // It's a duplicate view, but we return 200 so the frontend doesn't freak out
-      return { statusCode: 200, headers, body: JSON.stringify({ message: 'View already recorded recently.' }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ success: true, message: 'View already counted recently (limit: 4h).' }) };
     }
 
     const earningPerView = parseFloat(process.env.EARNING_PER_VIEW || '0.05');
-
     let earnedAmount = 0;
 
     // Run Transaction
     await db.runTransaction(async (t) => {
       // 1. Get Article to check existence
-      const articleRef = db.collection('articles').doc(articleId);
+      const articleRef = db!.collection('articles').doc(articleId);
       const articleDoc = await t.get(articleRef);
       if (!articleDoc.exists) throw new Error("Article not found");
 
       // 2. Get User (Conditional - only if refUserId provided)
       let userRef: admin.firestore.DocumentReference | null = null;
       if (refUserId) {
-        userRef = db.collection('users').doc(refUserId);
+        userRef = db!.collection('users').doc(refUserId);
         const userDoc = await t.get(userRef);
         
         // If the refUser doesn't exist (e.g. bad link), we proceed without error but don't pay
@@ -54,7 +62,7 @@ export const handler = async (event: any) => {
       }
 
       // 3. Create View Record
-      const viewRef = db.collection('views').doc(); // Auto ID
+      const viewRef = db!.collection('views').doc(); // Auto ID
       t.set(viewRef, {
         articleId,
         refUserId: refUserId || null,

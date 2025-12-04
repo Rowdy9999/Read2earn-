@@ -8,8 +8,10 @@ export const handler = async (event: any) => {
 
   try {
     const { articleId, refUserId } = JSON.parse(event.body || '{}');
-    if (!articleId || !refUserId) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing params' }) };
+    
+    // Only ArticleID is strictly required. refUserId is optional (if missing, we just record a view)
+    if (!articleId) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing articleId' }) };
     }
 
     const ip = getClientIp(event);
@@ -23,10 +25,13 @@ export const handler = async (event: any) => {
       .get();
 
     if (!recentViewSnap.empty) {
-      return { statusCode: 200, headers, body: JSON.stringify({ message: 'View already recorded' }) };
+      // It's a duplicate view, but we return 200 so the frontend doesn't freak out
+      return { statusCode: 200, headers, body: JSON.stringify({ message: 'View already recorded recently.' }) };
     }
 
     const earningPerView = parseFloat(process.env.EARNING_PER_VIEW || '0.05');
+
+    let earnedAmount = 0;
 
     // Run Transaction
     await db.runTransaction(async (t) => {
@@ -35,16 +40,24 @@ export const handler = async (event: any) => {
       const articleDoc = await t.get(articleRef);
       if (!articleDoc.exists) throw new Error("Article not found");
 
-      // 2. Get User
-      const userRef = db.collection('users').doc(refUserId);
-      const userDoc = await t.get(userRef);
-      if (!userDoc.exists) throw new Error("User not found");
+      // 2. Get User (Conditional - only if refUserId provided)
+      let userRef: admin.firestore.DocumentReference | null = null;
+      if (refUserId) {
+        userRef = db.collection('users').doc(refUserId);
+        const userDoc = await t.get(userRef);
+        
+        // If the refUser doesn't exist (e.g. bad link), we proceed without error but don't pay
+        if (!userDoc.exists) {
+           console.warn(`Referral User ${refUserId} not found. Proceeding with view only.`);
+           userRef = null;
+        }
+      }
 
       // 3. Create View Record
       const viewRef = db.collection('views').doc(); // Auto ID
       t.set(viewRef, {
         articleId,
-        refUserId,
+        refUserId: refUserId || null,
         ip,
         viewId, // Compound index helper
         createdAt: admin.firestore.Timestamp.now()
@@ -55,25 +68,28 @@ export const handler = async (event: any) => {
         views: admin.firestore.FieldValue.increment(1)
       });
 
-      // 5. Credit User Wallet
-      t.update(userRef, {
-        walletBalance: admin.firestore.FieldValue.increment(earningPerView),
-        totalViews: admin.firestore.FieldValue.increment(1)
-      });
+      // 5. Credit User Wallet (if valid user)
+      if (userRef) {
+        t.update(userRef, {
+          walletBalance: admin.firestore.FieldValue.increment(earningPerView),
+          totalViews: admin.firestore.FieldValue.increment(1)
+        });
+        earnedAmount = earningPerView;
+      }
     });
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ success: true, earned: earningPerView })
+      body: JSON.stringify({ success: true, earned: earnedAmount })
     };
 
   } catch (error: any) {
-    console.error(error);
+    console.error("Record View Error:", error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: error.message })
+      body: JSON.stringify({ error: error.message || 'Internal Server Error' })
     };
   }
 };

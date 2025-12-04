@@ -6,7 +6,8 @@ const BASE_URL = '/.netlify/functions';
 
 export const api = {
   async recordView(articleId: string, refUserId: string | null) {
-    if (!refUserId) return; // No referral, no recording needed for earning
+    // Removed the "if (!refUserId) return" check to allow recording anonymous views
+    // and to ensure logic works if checking against logged-in user ID
     
     try {
       const response = await fetch(`${BASE_URL}/recordView`, {
@@ -17,8 +18,7 @@ export const api = {
       return await response.json();
     } catch (error) {
       console.error("API Error (recordView):", error);
-      // Fallback for demo purposes if backend isn't present
-      console.log(`[DEMO] Would record view for ${articleId} referred by ${refUserId}`);
+      return { success: false, error: 'Network error' };
     }
   },
 
@@ -32,6 +32,7 @@ export const api = {
       return await response.json();
     } catch (error) {
       console.error("API Error (requestWithdrawal):", error);
+      return { success: false, error: 'Network error' };
     }
   },
 
@@ -45,6 +46,7 @@ export const api = {
       return await response.json();
     } catch (error) {
       console.error("API Error (approveWithdrawal):", error);
+      return { success: false, error: 'Network error' };
     }
   },
 

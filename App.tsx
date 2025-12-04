@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
@@ -8,26 +8,57 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import { auth, db } from './firebase';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { useDocument } from 'react-firebase-hooks/firestore';
+import firebase from 'firebase/compat/app';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, loading] = useAuthState(auth);
-  if (loading) return <div>Loading...</div>;
+  const [user, setUser] = useState<firebase.User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) return <div className="p-10 text-center">Loading...</div>;
   if (!user) return <Navigate to="/login" />;
   return <>{children}</>;
 };
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, loading] = useAuthState(auth);
-  // Using v8 firestore syntax for react-firebase-hooks
-  const [userProfile, profileLoading] = useDocument(user ? db.collection('users').doc(user.uid) : null);
-  
-  if (loading || profileLoading) return <div>Loading...</div>;
+  const [user, setUser] = useState<firebase.User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        try {
+          const docSnap = await db.collection('users').doc(currentUser.uid).get();
+          if (docSnap.exists && docSnap.data()?.role === 'admin') {
+            setIsAdmin(true);
+          } else {
+            setIsAdmin(false);
+          }
+        } catch (e) {
+          console.error("Error checking admin role", e);
+          setIsAdmin(false);
+        }
+      } else {
+        setUser(null);
+        setIsAdmin(false);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) return <div className="p-10 text-center">Checking permissions...</div>;
   if (!user) return <Navigate to="/login" />;
-  
-  const data = userProfile?.data();
-  if (data?.role !== 'admin') return <Navigate to="/dashboard" />;
+  if (!isAdmin) return <Navigate to="/dashboard" />;
 
   return <>{children}</>;
 };

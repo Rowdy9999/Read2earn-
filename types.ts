@@ -1,3 +1,4 @@
+
 export interface UserProfile {
   uid: string;
   email: string | null;
@@ -31,12 +32,18 @@ export interface WithdrawalRequest {
 
 export interface AppSettings {
   earningPerView: number;
+  earningPerSelfView?: number;
   minWithdrawal: number;
   paymentMethods: string[];
+  viewCooldownMinutes: number;
+  visitDurationSeconds?: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   earningPerView: 0.05,
+  earningPerSelfView: 0.01,
   minWithdrawal: 50,
   paymentMethods: ['UPI', 'Paytm', 'Bank Transfer'],
+  viewCooldownMinutes: 240, // 4 hours
+  visitDurationSeconds: 15,
 };

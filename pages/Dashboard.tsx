@@ -1,18 +1,22 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
-import { UserProfile, WithdrawalRequest, DEFAULT_SETTINGS } from '../types';
-import { DollarSign, Eye, TrendingUp, CreditCard, Shield, Lock } from 'lucide-react';
+import { UserProfile, WithdrawalRequest, AppSettings, DEFAULT_SETTINGS } from '../types';
+import { DollarSign, Eye, TrendingUp, CreditCard, Lock } from 'lucide-react';
 import { api } from '../services/api';
+import { useToast } from '../components/ToastContext';
 
 const Dashboard: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const { showToast } = useToast();
   
   // Withdrawal Form State
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState(DEFAULT_SETTINGS.paymentMethods[0]);
+  const [method, setMethod] = useState('');
   const [details, setDetails] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [promoting, setPromoting] = useState(false);
@@ -20,14 +24,27 @@ const Dashboard: React.FC = () => {
   const fetchUserData = async () => {
     if (!auth.currentUser) return;
     try {
-      // Fetch Profile
+      // 1. Fetch Global Settings
+      const settingsDoc = await db.collection('settings').doc('global').get();
+      if (settingsDoc.exists) {
+        const data = settingsDoc.data() as AppSettings;
+        setAppSettings(data);
+        // Set default method if available
+        if (data.paymentMethods.length > 0 && !method) {
+            setMethod(data.paymentMethods[0]);
+        }
+      } else {
+        if (!method) setMethod(DEFAULT_SETTINGS.paymentMethods[0]);
+      }
+
+      // 2. Fetch Profile
       const userRef = db.collection('users').doc(auth.currentUser.uid);
       const userSnap = await userRef.get();
       if (userSnap.exists) {
         setProfile(userSnap.data() as UserProfile);
       }
 
-      // Fetch Withdrawals
+      // 3. Fetch Withdrawals
       const wQuery = db.collection('withdrawals').where('userId', '==', auth.currentUser.uid);
       const wSnap = await wQuery.get();
       const wList: WithdrawalRequest[] = [];
@@ -54,22 +71,29 @@ const Dashboard: React.FC = () => {
     if (!profile || !auth.currentUser) return;
 
     const val = parseFloat(amount);
-    if (val < DEFAULT_SETTINGS.minWithdrawal) {
-      alert(`Minimum withdrawal is $${DEFAULT_SETTINGS.minWithdrawal}`);
+    const minWithdrawal = appSettings.minWithdrawal;
+
+    if (val < minWithdrawal) {
+      showToast(`Minimum withdrawal is $${minWithdrawal}`, 'error');
       return;
     }
     if (val > profile.walletBalance) {
-      alert('Insufficient funds');
+      showToast('Insufficient funds in wallet', 'error');
       return;
     }
 
     setSubmitting(true);
-    await api.requestWithdrawal(auth.currentUser.uid, val, method, details);
+    const res = await api.requestWithdrawal(auth.currentUser.uid, val, method, details);
     setSubmitting(false);
-    setAmount('');
-    setDetails('');
-    alert('Withdrawal requested successfully!');
-    fetchUserData(); // Refresh
+
+    if (res && res.success) {
+      setAmount('');
+      setDetails('');
+      showToast('Withdrawal requested successfully!', 'success');
+      fetchUserData(); // Refresh
+    } else {
+      showToast(res?.error || 'Failed to request withdrawal', 'error');
+    }
   };
 
   const handleBecomeAdmin = async () => {
@@ -83,10 +107,10 @@ const Dashboard: React.FC = () => {
     setPromoting(false);
 
     if (result && result.success) {
-        alert("Success! You are now an Admin. The page will reload.");
-        window.location.reload();
+        showToast("Success! You are now an Admin. The page will reload.", 'success');
+        setTimeout(() => window.location.reload(), 1500);
     } else {
-        alert("Failed: " + (result?.error || "Incorrect password or error occurred."));
+        showToast(result?.error || "Incorrect password or error occurred.", 'error');
     }
   };
 
@@ -158,8 +182,8 @@ const Dashboard: React.FC = () => {
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Earning Rate</dt>
-                  <dd className="text-lg font-medium text-gray-900">${DEFAULT_SETTINGS.earningPerView} / view</dd>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Earning Rate (Shared)</dt>
+                  <dd className="text-lg font-medium text-gray-900">${appSettings.earningPerView} / view</dd>
                 </dl>
               </div>
             </div>
@@ -176,7 +200,7 @@ const Dashboard: React.FC = () => {
             </h3>
             <form onSubmit={handleWithdraw} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Amount (Min ${DEFAULT_SETTINGS.minWithdrawal})</label>
+                <label className="block text-sm font-medium text-gray-700">Amount (Min ${appSettings.minWithdrawal})</label>
                 <div className="mt-1 relative rounded-md shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <span className="text-gray-500 sm:text-sm">$</span>
@@ -184,7 +208,7 @@ const Dashboard: React.FC = () => {
                   <input
                     type="number"
                     required
-                    min={DEFAULT_SETTINGS.minWithdrawal}
+                    min={appSettings.minWithdrawal}
                     step="0.01"
                     className="focus:ring-brand-500 focus:border-brand-500 block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md py-2 border"
                     placeholder="0.00"
@@ -200,7 +224,7 @@ const Dashboard: React.FC = () => {
                   onChange={(e) => setMethod(e.target.value)}
                   className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm rounded-md border"
                 >
-                  {DEFAULT_SETTINGS.paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                  {appSettings.paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <div>

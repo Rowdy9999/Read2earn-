@@ -1,3 +1,4 @@
+
 import { db, headers } from './utils';
 import * as admin from 'firebase-admin';
 
@@ -6,6 +7,27 @@ export const handler = async (event: any) => {
 
   try {
     const { uid, amount, method, details } = JSON.parse(event.body || '{}');
+
+    // --- FETCH DYNAMIC SETTINGS ---
+    let minWithdrawal = 50; // Default
+    try {
+      const settingsDoc = await db.collection('settings').doc('global').get();
+      if (settingsDoc.exists) {
+        const data = settingsDoc.data();
+        if (data && typeof data.minWithdrawal === 'number') {
+          minWithdrawal = data.minWithdrawal;
+        }
+      } else {
+         minWithdrawal = parseFloat(process.env.MIN_WITHDRAWAL || '50');
+      }
+    } catch (e) {
+      console.error("Error fetching settings:", e);
+    }
+    // -----------------------------
+
+    if (amount < minWithdrawal) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: `Minimum withdrawal is $${minWithdrawal}` }) };
+    }
 
     // Basic Validation
     const userRef = db.collection('users').doc(uid);

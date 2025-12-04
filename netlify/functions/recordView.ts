@@ -1,3 +1,5 @@
+
+
 import { db, dbInitError, headers, getClientIp } from './utils';
 import * as admin from 'firebase-admin';
 
@@ -19,7 +21,7 @@ export const handler = async (event: any) => {
   }
 
   try {
-    const { articleId, refUserId } = JSON.parse(event.body || '{}');
+    const { articleId, refUserId, fingerprint, viewType } = JSON.parse(event.body || '{}');
     
     // Only ArticleID is strictly required.
     if (!articleId) {
@@ -27,20 +29,80 @@ export const handler = async (event: any) => {
     }
 
     const ip = getClientIp(event);
-    const viewId = `${articleId}_${ip}`;
     const now = new Date();
     
-    // Check for recent view (simple rate limiting: 1 view per article per IP per 4 hours)
-    const recentViewSnap = await db.collection('views')
-      .where('viewId', '==', viewId)
-      .where('createdAt', '>', new Date(now.getTime() - 4 * 60 * 60 * 1000))
+    // --- FETCH SETTINGS (Earning & Cooldown) ---
+    let earningPerView = 0.05; 
+    let earningPerSelfView = 0.01;
+    let cooldownMinutes = 240; // Default 4 hours
+
+    try {
+      const settingsDoc = await db.collection('settings').doc('global').get();
+      if (settingsDoc.exists) {
+        const data = settingsDoc.data();
+        if (data) {
+          if (typeof data.earningPerView === 'number') earningPerView = data.earningPerView;
+          if (typeof data.earningPerSelfView === 'number') earningPerSelfView = data.earningPerSelfView;
+          if (typeof data.viewCooldownMinutes === 'number') cooldownMinutes = data.viewCooldownMinutes;
+        }
+      } else {
+        earningPerView = parseFloat(process.env.EARNING_PER_VIEW || '0.05');
+      }
+    } catch (e) {
+      console.error("Error fetching settings:", e);
+    }
+    // -------------------------------------------
+
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    const cooldownDate = new Date(now.getTime() - cooldownMs);
+
+    // --- CHECK FOR DUPLICATES (IP or Fingerprint or User) ---
+    // Firestore OR queries are limited, so we run checks in parallel or sequence.
+    
+    // Check 1: Recent View by IP
+    const ipQuery = db.collection('views')
+      .where('articleId', '==', articleId)
+      .where('ip', '==', ip)
+      .where('createdAt', '>', cooldownDate)
+      .limit(1)
       .get();
 
-    if (!recentViewSnap.empty) {
-      return { statusCode: 200, headers, body: JSON.stringify({ success: true, message: 'View already counted recently (limit: 4h).' }) };
+    // Check 2: Recent View by Fingerprint (if provided)
+    const fpQuery = fingerprint ? db.collection('views')
+      .where('articleId', '==', articleId)
+      .where('fingerprint', '==', fingerprint)
+      .where('createdAt', '>', cooldownDate)
+      .limit(1)
+      .get() : Promise.resolve({ empty: true });
+
+    // Check 3: Recent View by UserID (if logged in user is viewing/earning)
+    // Note: 'refUserId' represents the person getting PAID. 
+    // If user is reading their own link, refUserId == current user.
+    // If user is reading generic link, refUserId might be null.
+    // We strictly check the beneficiary.
+    const userQuery = refUserId ? db.collection('views')
+      .where('articleId', '==', articleId)
+      .where('refUserId', '==', refUserId)
+      .where('createdAt', '>', cooldownDate)
+      .limit(1)
+      .get() : Promise.resolve({ empty: true });
+
+    const [ipSnap, fpSnap, userSnap] = await Promise.all([ipQuery, fpQuery, userQuery]);
+
+    // If ANY check finds a document, it is a duplicate/cooldown hit.
+    if (!ipSnap.empty || !fpSnap.empty || (!userSnap.empty)) {
+      // SILENT SUCCESS: We return success=true so frontend doesn't error, 
+      // but earned=0 so user knows nothing happened (or logic is hidden).
+      return { 
+        statusCode: 200, 
+        headers, 
+        body: JSON.stringify({ success: true, earned: 0, message: 'Cooldown active' }) 
+      };
     }
 
-    const earningPerView = parseFloat(process.env.EARNING_PER_VIEW || '0.05');
+    // Determine actual earning based on view type
+    const amountToCredit = (viewType === 'self') ? earningPerSelfView : earningPerView;
+
     let earnedAmount = 0;
 
     // Run Transaction
@@ -56,7 +118,6 @@ export const handler = async (event: any) => {
         userRef = db!.collection('users').doc(refUserId);
         const userDoc = await t.get(userRef);
         
-        // If the refUser doesn't exist (e.g. bad link), we proceed without error but don't pay
         if (!userDoc.exists) {
            console.warn(`Referral User ${refUserId} not found. Proceeding with view only.`);
            userRef = null;
@@ -64,12 +125,13 @@ export const handler = async (event: any) => {
       }
 
       // 3. Create View Record
-      const viewRef = db!.collection('views').doc(); // Auto ID
+      const viewRef = db!.collection('views').doc();
       t.set(viewRef, {
         articleId,
         refUserId: refUserId || null,
         ip,
-        viewId, // Compound index helper
+        fingerprint: fingerprint || null,
+        viewType: viewType || 'unknown',
         createdAt: admin.firestore.Timestamp.now()
       });
 
@@ -79,12 +141,12 @@ export const handler = async (event: any) => {
       });
 
       // 5. Credit User Wallet (if valid user)
-      if (userRef) {
+      if (userRef && amountToCredit > 0) {
         t.update(userRef, {
-          walletBalance: admin.firestore.FieldValue.increment(earningPerView),
+          walletBalance: admin.firestore.FieldValue.increment(amountToCredit),
           totalViews: admin.firestore.FieldValue.increment(1)
         });
-        earnedAmount = earningPerView;
+        earnedAmount = amountToCredit;
       }
     });
 

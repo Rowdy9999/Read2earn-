@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -7,6 +8,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import { ToastProvider } from './components/ToastContext';
 import { auth, db } from './firebase';
 import firebase from 'firebase/compat/app';
 
@@ -65,18 +67,20 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const App: React.FC = () => {
   return (
-    <Router>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/article/:id" element={<Article />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-        </Routes>
-      </Layout>
-    </Router>
+    <ToastProvider>
+      <Router>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/article/:id" element={<Article />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+          </Routes>
+        </Layout>
+      </Router>
+    </ToastProvider>
   );
 };
 

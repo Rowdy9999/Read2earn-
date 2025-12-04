@@ -1,16 +1,18 @@
 
+
+
 // Wrapper to call Netlify functions
 // In a local development environment without Netlify CLI, these will 404.
 
 const BASE_URL = '/.netlify/functions';
 
 export const api = {
-  async recordView(articleId: string, refUserId: string | null) {
+  async recordView(articleId: string, refUserId: string | null, fingerprint: string, viewType?: string) {
     try {
       const response = await fetch(`${BASE_URL}/recordView`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articleId, refUserId }),
+        body: JSON.stringify({ articleId, refUserId, fingerprint, viewType }),
       });
       
       const text = await response.text();

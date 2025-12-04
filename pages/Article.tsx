@@ -111,19 +111,19 @@ const Article: React.FC = () => {
           alt={article.title} 
           className="w-full h-full object-cover"
         />
-        <div className="absolute top-4 right-4 px-4 py-2 rounded-full flex items-center text-sm font-medium backdrop-blur-sm shadow-sm transition-all duration-300 bg-white/90 text-gray-800">
+        <div className="absolute top-2 right-2 px-2 py-1 rounded-full flex items-center text-xs font-medium backdrop-blur-sm shadow-sm transition-all duration-300 bg-white/80 text-gray-700">
            {viewRecorded ? (
              <span className="flex items-center text-green-600 font-bold">
-               <CheckCircle className="w-4 h-4 mr-1"/> Validated
+               <CheckCircle className="w-3 h-3 mr-1"/> Validated
              </span>
            ) : processing ? (
              <span className="flex items-center text-blue-600 font-bold">
-               <Loader className="w-4 h-4 mr-1 animate-spin"/> Verifying...
+               <Loader className="w-3 h-3 mr-1 animate-spin"/> Verifying...
              </span>
            ) : (
-             <span className="flex items-center">
-               <Clock className="w-4 h-4 mr-2" />
-               Reading: {timeLeft}s left
+             <span className="flex items-center opacity-75">
+               <Clock className="w-3 h-3 mr-1" />
+               {timeLeft}s
              </span>
            )}
         </div>
@@ -167,12 +167,12 @@ const Article: React.FC = () => {
           ))}
         </div>
         
-        {/* Sticky bottom banner for encouragement */}
+        {/* Sticky bottom banner for encouragement - smaller and subtle */}
         {!viewRecorded && !processing && (
-           <div className="fixed bottom-0 left-0 right-0 bg-brand-600 text-white p-4 text-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-40 transform transition-transform">
-              <p className="font-medium flex items-center justify-center">
-                <Clock className="w-5 h-5 mr-2 animate-pulse" />
-                Read for {timeLeft} more seconds to earn reward!
+           <div className="fixed bottom-0 left-0 right-0 bg-gray-900/90 text-white py-1 text-center shadow-sm z-40 transform transition-transform backdrop-blur-sm">
+              <p className="font-light text-xs flex items-center justify-center opacity-90">
+                <Clock className="w-3 h-3 mr-1 animate-pulse" />
+                Reading time: {timeLeft}s
               </p>
            </div>
         )}

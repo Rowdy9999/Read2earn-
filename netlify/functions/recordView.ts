@@ -1,4 +1,4 @@
-import { db, headers, getClientIp } from './utils';
+import { db, dbInitError, headers, getClientIp } from './utils';
 import * as admin from 'firebase-admin';
 
 export const handler = async (event: any) => {
@@ -8,11 +8,13 @@ export const handler = async (event: any) => {
 
   // Critical Check: Is DB connected?
   if (!db) {
-    console.error("Database connection missing. Check FIREBASE_SERVICE_ACCOUNT env var.");
+    console.error("Database connection failed:", dbInitError);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: "Server Configuration Error: Database not connected." })
+      body: JSON.stringify({ 
+        error: `Server Error: ${dbInitError || "Database not connected."}`
+      })
     };
   }
 
